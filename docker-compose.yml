@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  travel_agent:
+    build: .
+    container_name: travel_agent_mvp
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - AGENT_NAME=${AGENT_NAME}
+      - AGENT_LANGUAGE=${AGENT_LANGUAGE}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - CHUNK_SIZE=${CHUNK_SIZE}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP}
+      - RETRIEVAL_K=${RETRIEVAL_K}
+      - DEBUG_MODE=${DEBUG_MODE}
+    volumes:
+      - ./documents:/app/documents
+      - ./chroma_db:/app/chroma_db
+      - ./.env:/app/.env
+    tty: true

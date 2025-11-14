@@ -1,0 +1,5 @@
+.gitignore
+*.sh
+./travel_agent_mvp
+./dev_doc
+__pycache__/
