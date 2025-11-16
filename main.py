@@ -34,9 +34,16 @@ def main():
         state["messages"].append({"role": "user", "content": user_input})
         all_user_inputs = " ".join([msg["content"] for msg in state["messages"] if msg["role"] == "user"])
         state["query"] = all_user_inputs
-
-        result_state = app.invoke(state, config={"configurable": {"thread_id": thread_id}})
-        state = result_state
+        try:
+            result_state = app.invoke(state, config={"configurable": {"thread_id": thread_id}})
+            state = result_state
+        except TypeError as e:
+            if "checkin" in str(e) or "checkout" in str(e):
+                print("⚠️ 查詢住宿時請提供入住與退房日期（格式 YYYY-MM-DD）")
+                continue
+            else:
+                print(f"⚠️ 執行錯誤：{e}")
+                continue
 
         current_agent = result_state.get("current_agent", "")
 
@@ -44,7 +51,7 @@ def main():
         if current_agent == "recommendation":
             recommendation_result = result_state.get("recommendation_result", "")
             if recommendation_result:
-                print(recommendation_result)
+                print(f"🤖 {recommendation_result}")
                 if ("請問" in recommendation_result or "還缺少" in recommendation_result or "資訊不足" in recommendation_result):
                     continue  # 等待使用者補充
             else:

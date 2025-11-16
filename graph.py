@@ -152,6 +152,16 @@ class CalculateRouteInput(BaseModel):
     origin: str = Field(description="起點（如台中）")
     destination: str = Field(description="終點（如雪山滑雪場）")
     mode: str = Field(description="交通方式（transit/driving/walking）")
+    
+class CallWeatherInput(BaseModel):
+    location: str = Field(description="地點（如台中、台北）")
+    start_date: str = Field(description="開始日期（格式 YYYY-MM-DD）")
+    end_date: Optional[str] = Field(default=None, description="結束日期（可選，格式 YYYY-MM-DD）")
+
+class CallAccommodationInput(BaseModel):
+    location: str = Field(description="地點（如台中、台北）")
+    checkin: str = Field(description="入住日期（格式 YYYY-MM-DD）")
+    checkout: str = Field(description="退房日期（格式 YYYY-MM-DD）")
 
 # ========== Base Tools ==========
 
@@ -254,6 +264,8 @@ accommodation_base_tools = [
         name="search_hotels",
         description="""
         查詢住宿推薦（調用 Amadeus API 或本地 fallback）。
+        必須提供：地點（location）、入住日期（checkin）、退房日期（checkout）。
+        若缺少任何一項，請主動詢問使用者補充資訊（如：「請輸入入住與退房日期」）。
         輸入：location（地點）, checkin（入住日期，格式 YYYY-MM-DD）, checkout（退房日期，格式 YYYY-MM-DD）
         輸出：住宿清單（JSON），包含飯店名稱、評分、價格、設施
         """,
@@ -832,6 +844,9 @@ def call_accommodation_agent(location: str, checkin: str, checkout: str) -> str:
     Returns:
         JSON 格式的住宿推薦資訊
     """
+    if not checkin or not checkout:
+        raise ValueError("請提供入住與退房日期")
+        return "請提供入住與退房日期（checkin/checkout）"
     query = f"請查詢 {location} 的住宿,入住日期 {checkin}，退房日期 {checkout}"
     
     result = accommodation_agent.invoke({"messages": [{"role": "user", "content": query}]})
@@ -1085,24 +1100,42 @@ evaluator_tools = []
 
 recommendation_tools = [
     Tool(
-        name="search_attractions",
-        func=search_attractions_tool_wrapper,  # 你的景點查詢函式
-        description="""
-        搜尋並推薦景點、雪場、活動等旅遊資訊。
-        輸入：查詢字串（如「日本滑雪場」、「東京景點」、「溫泉推薦」）
-        輸出：JSON 格式的推薦清單與簡要說明。
-        """
+        name="call_retriever",
+        func=call_retriever_agent,
+        description="呼叫 Retriever Agent 檢索知識庫資訊。輸入：查詢問題（字串）"
     ),
     Tool(
-        name="rag_retrieval",
-        func=rag_retrieval_tool_wrapper,  # 你的知識庫檢索函式
+        name="call_attraction",
+        func=call_attraction_agent,
+        description="呼叫 Attraction Agent 查詢景點資訊。輸入：查詢問題（字串）"
+    ),
+    # Tool(
+    #     name="call_itinerary",
+    #     func=call_itinerary_agent,
+    #     description="呼叫 Itinerary Agent 生成行程規劃。輸入：user_request, retriever_data, attraction_data"
+    # ),
+    StructuredTool.from_function(
+        func=call_weather_agent,
+        name="call_weather",
         description="""
-        從知識庫檢索旅遊相關資料，補充景點、交通、活動等背景資訊。
-        輸入：查詢字串
-        輸出：JSON 格式的檢索結果。
-        """
+        呼叫 Weather Agent 查詢天氣預報。
+        必須提供：location（地點）, start_date（開始日期 YYYY-MM-DD）, end_date（結束日期，可選）。
+        輸出：天氣預報與活動建議（JSON）
+        """,
+        args_schema=CallWeatherInput
+    ),
+    StructuredTool.from_function(
+        func=call_accommodation_agent,
+        name="call_accommodation",
+        description="""
+        呼叫 Accommodation Agent 查詢住宿推薦。
+        必須提供：location（地點）, checkin（入住日期 YYYY-MM-DD）, checkout（退房日期 YYYY-MM-DD）。
+        輸出：住宿清單與推薦建議（JSON）
+        """,
+        args_schema=CallAccommodationInput
     )
 ]
+
 
 # ========== Create Coordinator Agents with A2A Tools ==========
 
