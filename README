@@ -1,0 +1,198 @@
+# 旅遊規劃 AI Agent MVP
+
+本專案為「知識增強型旅遊規劃 AI Agent」MVP，整合 RAG（Retrieval-Augmented Generation）技術，能根據知識庫文件提供精準、友善的旅遊建議。
+專案採用 **LangChain**、**LangGraph**、OpenAI API 及 Chroma 向量資料庫，支援 CLI 互動、對話記憶與知識檢索。
+
+---
+
+## 📂 專案結構
+
+```
+travel_agent_mvp/
+├── documents/           # 旅遊知識文件庫（.txt）
+├── chroma_db/           # 向量資料庫（Chroma自動產生）
+├── .env                 # 環境變數
+├── requirements.txt     # 依賴清單
+├── prepare_documents.py # 文件載入/檢查腳本
+├── build_vectorstore.py # 向量庫建置腳本
+├── state.py             # Agent State Schema 定義
+├── nodes.py             # Graph Nodes（RAG/LLM節點）
+├── graph.py             # Graph 建構與編譯
+├── main.py              # CLI 執行入口
+├── tests/               # 單元測試
+└── README               # 專案說明
+```
+
+---
+
+## 🚀 快速開始
+
+1. **安裝依賴**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **設定環境變數**
+   - 複製 `.example-env` 為 `.env`，填入 OpenAI API Key 及模型名稱
+   - 主要參數：
+     - `OPENAI_API_KEY`
+     - `OPENAI_MODEL`（建議：gpt-4o-mini）
+     - `EMBEDDING_MODEL`（建議：text-embedding-3-small）
+     - `RETRIEVAL_K`（預設：3）
+
+3. **準備知識文件**
+   - 將旅遊相關 .txt 文件放入 `documents/` 資料夾
+   - 每份文件 300-600 字，UTF-8 編碼
+
+4. **建置向量資料庫**
+   ```bash
+   python build_vectorstore.py
+   ```
+
+5. **啟動 CLI 對話介面**
+   ```bash
+   python main.py
+   ```
+
+---
+
+## 🧠 技術框架與功能特色
+
+### 1. 框架選用
+
+- **LangChain + LangGraph**  
+  本專案核心採用 LangChain 作為 LLM 應用開發主架構，並結合 LangGraph 實現多 Agent 工作流與狀態管理。LangGraph 讓多個專業 Agent 能協作完成複雜旅遊規劃任務，支援條件分流、記憶體保存與多輪互動。
+
+### 2. Multi-Agent 與 A2A 架構
+
+- **多 Agent 協作（Multi-Agent）**  
+  專案設計多個專業 Agent（如 Recommendation、Planner、Retriever、Attraction、Itinerary、Weather、Accommodation、Evaluator），各自負責推薦、規劃、檢索、查詢、評估等任務。
+- **Agent-to-Agent（A2A）工具呼叫**  
+  各 Agent 可透過工具（Tool）互相呼叫彼此的功能，實現跨 Agent 資訊流通與協作。例如 Planner Agent 可呼叫 Retriever Agent 檢索知識庫，再呼叫 Attraction Agent查詢景點，最後整合結果生成行程。
+
+### 3. Function Tool 支援
+
+- **Function Tool 機制**  
+  專案使用 LangChain 的 Tool/StructuredTool 機制，將檢索、查詢、格式化、預算估算、路線規劃、天氣查詢、住宿查詢等功能封裝為可被 Agent 調用的 function tool。
+- **自動化工具調用**  
+  Agent 可根據需求自動選擇並調用合適的工具，並將結果結構化回傳，方便後續流程整合與決策。
+
+#### 特色總結
+
+1. **多 Agent 協作**：每個 Agent 專責不同任務，互相協作完成複雜旅遊規劃。
+2. **A2A 工具呼叫**：Agent 之間可透過工具互相調用，資訊流通順暢。
+3. **Function Tool 封裝**：所有核心功能皆以 Tool 形式封裝，易於擴充與維護。
+4. **LangChain + LangGraph 架構**：支援多輪對話、狀態管理、條件分流與記憶體保存，提升系統彈性與可擴展性。
+
+---
+
+## 主要目標
+
+打造一個結合 RAG 技術的旅遊規劃 AI Agent MVP，能根據知識庫文件，提供精準且友善的旅遊建議，並支援多輪對話記憶與互動。
+
+---
+
+## 主要功能模組
+
+- 文件準備與向量資料庫建置
+- 狀態管理（State Schema）
+- RAG 檢索節點
+- LLM 生成節點
+- Graph 流程管理
+- CLI 互動介面
+- 單元測試
+
+---
+
+## 各功能模組核心概念
+
+- **文件準備與向量資料庫建置**  
+  旅遊知識文件轉換為向量，提升檢索效率。
+
+- **狀態管理（State Schema）**  
+  統一管理對話歷史、偏好、檢索結果。
+
+- **RAG 檢索節點**  
+  依據問題，從向量資料庫找出最相關文件。
+
+- **LLM 生成節點**  
+  整合檢索知識，生成自然語言回應。
+
+- **Graph 流程管理**  
+  定義對話流程，串接各節點，支援多輪互動。
+
+- **CLI 互動介面**  
+  命令列對話入口，方便測試與操作。
+
+- **單元測試**  
+  驗證各模組功能正確性與穩定性。
+
+---
+
+## 功能概要
+
+1. **知識檢索強化**：結合 Chroma 向量資料庫與 OpenAI Embeddings，提升旅遊建議準確度。
+2. **多輪記憶互動**：Graph 流程串接 RAG 與 LLM 節點，支援上下文記憶與偏好管理。
+3. **易用 CLI 介面**：命令列互動設計，快速驗證 AI 回應與知識檢索效果。
+
+---
+
+## 案例流程與節點功能解說
+
+### 使用者查詢：「推薦台北景點」
+
+1. **CLI 互動介面**  
+   使用者輸入問題，CLI 收集並傳遞給 Graph。
+
+2. **Graph 流程管理**  
+   啟動對話流程，初始化狀態。
+
+3. **RAG 檢索節點**  
+   從知識庫中，利用向量檢索找出最相關的台北景點文件。
+
+4. **LLM 生成節點**  
+   整合檢索到的文件內容，生成包含景點介紹、交通、門票等資訊的回應。
+
+5. **狀態管理**  
+   將本輪訊息、檢索結果、使用者偏好等資訊存入 AgentState。
+
+6. **CLI 顯示回應**  
+   回傳結果於命令列，使用者可繼續追問或切換主題。
+
+---
+
+### 各節點功能
+
+- **RAG 檢索節點**：負責知識庫檢索，確保回應有根據。
+- **LLM 生成節點**：根據檢索結果生成自然語言回應。
+- **狀態管理**：維持對話連貫性與個人化偏好。
+- **Graph 流程**：串接各節點，支援多輪互動與記憶。
+
+---
+
+## 📝 測試與驗證
+
+- 執行 `tests/` 內測試腳本，驗證 RAG 檢索、LLM 回應、狀態流動
+- 主要測試項目：
+  - 回應內容與知識庫一致
+  - CLI 互動流暢
+  - 錯誤處理完善
+
+---
+
+## 📚 參考/延伸
+
+- LangChain 官方文件：https://python.langchain.com/
+- LangGraph 官方文件：https://langchain-ai.github.io/langgraph/
+- Chroma 向量資料庫：https://docs.trychroma.com/
+- OpenAI API：https://platform.openai.com/docs/
+
+---
+
+## 🏗️ 未來規劃
+
+- 增加知識庫文件數量與主題覆蓋
+- 優化檢索策略（chunk size、re-ranking、混合檢索）
+- 多 Agent 協作、條件分支、外部 API 整合
+
+---
