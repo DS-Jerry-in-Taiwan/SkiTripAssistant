@@ -1,6 +1,5 @@
 travel_agent_mvp/
 .env
 __pycache__/
-chroma_db/
 hist/
 *.sh
