@@ -42,6 +42,7 @@ class AgentState(TypedDict):
     user_preferences: Dict[str, Any]
     retrieved_docs: List[Document]
     query: Optional[str]
+    recent_queries: list[str]  # 新增：最近 N 輪 user query
     conversation_summary: Optional[str]  # 新增欄位
     tool_results: Optional[List[ToolResult]]
     

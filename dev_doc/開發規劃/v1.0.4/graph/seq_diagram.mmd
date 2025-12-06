@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant User as 使用者
+    participant Main as main.py (CLI/入口)
+    participant Graph as graph.py (Agent Orchestration)
+    participant Nodes as nodes.py (RAG/LLM/工具)
+    participant State as state.py (AgentState)
+
+    User->>Main: 輸入查詢
+    Main->>State: 更新 AgentState（messages, query...）
+    Main->>Graph: 傳遞 AgentState
+    Graph->>Nodes: 調用工具/agent node（RAG, LLM, API）
+    Nodes->>State: 更新 AgentState（檢索、生成、工具結果）
+    Graph->>Main: 回傳更新後的 AgentState
+    Main->>User: 顯示最終回應

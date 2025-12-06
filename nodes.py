@@ -74,7 +74,6 @@ def load_location_map(filepath: str = None) -> dict:
         "大阪": "Osaka"
     }
 
-
 def location_standardizer_llm(location: str, model_name: str = "gpt-3.5-turbo") -> str:
     """
     使用 LLM 進行地名語意解析與標準化
@@ -106,7 +105,6 @@ def location_standardizer_llm(location: str, model_name: str = "gpt-3.5-turbo") 
     except Exception as e:
         print(f"LLM 地名解析失敗：{e}")
         return location
-
 
 def location_standardizer_with_detail(location: str, target_type: str = "full", model_name: str = "gpt-4o") -> dict:
     """
@@ -200,7 +198,6 @@ def location_standardizer_with_detail(location: str, target_type: str = "full", 
         location_map = load_location_map()
         return location_map.get(location, location)
 
-
 def location_standardizer(location: str, target_language: str = "en", use_llm: bool = True) -> str:
     """
     地名標準化工具：將中文地名轉換為標準格式（英文或城市代碼）
@@ -276,7 +273,6 @@ def location_standardizer(location: str, target_language: str = "en", use_llm: b
         print(f"警告：地名 '{location}' 無法映射為英文，使用原始輸入")
     
     return standardized
-
 
 def location_standardizer_wrapper(location: str, target_language: str = "en") -> str:
     """
@@ -360,14 +356,12 @@ def search_attractions_node(query: str, top_k: int = 5, api_key: str=GOOGLE_PLAC
         "summary": f"共找到 {len(results)} 筆景點/活動推薦"
     }
 
-
 def search_attractions_tool_wrapper(query: str) -> str:
     """
     Tool wrapper for create_agent.Tool - 回傳 JSON 字串
     """
     result = search_attractions_node(query)
     return json.dumps(result, ensure_ascii=False, indent=2)
-
 
 def rag_retrieval_node(query: str, top_k: int = 5) -> Dict[str, Any]:
     """
@@ -424,7 +418,6 @@ def rag_retrieval_tool_wrapper(query: str) -> str:
     result = rag_retrieval_node(query)
     return json.dumps(result, ensure_ascii=False, indent=2)
 
-
 # ========== 工具 1：格式化資料 ==========
 def format_itinerary_data(retriever_data: str, attraction_data: str) -> str:
     """
@@ -443,7 +436,6 @@ def format_itinerary_data(retriever_data: str, attraction_data: str) -> str:
     }
     
     return json.dumps(formatted, ensure_ascii=False, indent=2)
-
 
 # ========== 工具 2：預算估算 ==========
 def calculate_budget_estimate(days: int, budget_level: str = "中等") -> str:
@@ -470,7 +462,6 @@ def calculate_budget_estimate(days: int, budget_level: str = "中等") -> str:
             "活動": f"NT$ {int(daily_budget * 0.1 * days)}"
         }
     }, ensure_ascii=False, indent=2)
-
 
 # ========== 工具 3：路線規劃（Google Maps API）==========
 def calculate_route(origin: str, destination: str, mode: str = "transit") -> str:
@@ -510,7 +501,6 @@ def calculate_route(origin: str, destination: str, mode: str = "transit") -> str
     
     except Exception as e:
         return json.dumps({"error": f"API 調用失敗：{str(e)}"}, ensure_ascii=False)
-
 
 # ========== 工具 4：天氣查詢（OpenWeatherMap API）==========
 def get_weather_forecast(location: str, date: str) -> str:
@@ -558,7 +548,6 @@ def get_weather_forecast(location: str, date: str) -> str:
     
     except Exception as e:
         return json.dumps({"error": f"天氣查詢失敗：{str(e)}"}, ensure_ascii=False)
-
 
 # ========== 工具 5：住宿查詢（Booking.com API - 可選）==========
 def search_accommodation_fallback(location: str, checkin: str, checkout: str) -> str:
@@ -783,7 +772,6 @@ def parse_user_preferences_tool(raw_text: str, required_fields: str = "") -> str
         default_result = {field: (0 if field == "days" else "") for field in fields_list}
         return json.dumps(default_result, ensure_ascii=False, indent=2)
 
-
 # ========== Tool Wrappers ==========
 def format_itinerary_data_wrapper(retriever_data: str, attraction_data: str) -> str:
     return format_itinerary_data(retriever_data, attraction_data)
@@ -807,7 +795,6 @@ def parse_user_preferences_wrapper(raw_text: str, required_fields: str = "") -> 
     Tool wrapper for Agent - 回傳 JSON 字串
     """
     return parse_user_preferences_tool(raw_text, required_fields)
-
 
 # ========== 輔助函數 ==========
 # retriever setup
@@ -1046,60 +1033,31 @@ def is_semantically_duplicate(text1: str, text2: str, threshold: float = 0.9) ->
     similarity = dot(vec1, vec2) / (norm(vec1) * norm(vec2))
     return similarity > threshold
 
+def get_merged_query(state: Dict[str, Any]) -> str:
+    """合併 recent_queries 為一個查詢文本"""
+    return " ".join(state.get("recent_queries", []))
 
-def call_model_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def update_recent_queries(state: Dict[str, Any], new_query: str, max_queries: int = 10) -> Dict[str, Any]:
     """
-    Call LLM model to generate response based on the built prompt
+    update state with recent user queries
     """
-    try:
-        # merge system prompt and the formated retrieved documnets
-        prompt_messages = build_prompt(state)
-        prompt_messages = truncate_prompt_by_token(prompt_messages, model_name="gpt-3.5-turbo")
-         
-        # Initialize the LLM model
-        llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=OPENAI_API_KEY, temperature=0.2)
+    recent = state.get("recent_queries", [])
+    if not recent or recent[-1] != new_query:
+        recent.append(new_query)
+    state["recent_queries"] = recent[-max_queries:]
+    return state
 
-        # Call the model
-        response = llm.invoke(prompt_messages)
-        ai_content = response.content if hasattr(response, "content") else str(response)
-        
-        # check for semantic duplication with last assistant message
-        last_assistant_msg = ""
-        for msg in reversed(state["messages"]):
-            if msg["role"] == "assistant":
-                last_assistant_msg = msg["content"]
-                break
-        # 語意重複判斷
-        is_duplicate = False
-        if last_assistant_msg:
-            is_duplicate = is_semantically_duplicate(ai_content.strip(), last_assistant_msg.strip())
-
-        if is_duplicate:
-            # 調用 LLM 產生通用回應並引導切換主題，補充使用者偏好
-            print("Detected semantically duplicate response. Generating alternative response.")
-            context = get_recent_messages(state.get("messages", []), n=6)
-            prefs_text = format_user_preferences(state.get("user_preferences", {}))
-            prompt = (
-                "目前您的問題已獲得完整回答，請根據現有對話情境與使用者偏好："
-                f"{prefs_text}\n"
-                "提供一段通用回應並主動引導使用者切換到其他旅遊主題或提出新需求，回覆繁體中文。"
-            )
-            ai_content = generate_prompt(context, prompt, model_name="gpt-3.5-turbo")
-            
-        # update state with the assistant message
-        state["messages"].append({"role": "assistant", "content": ai_content})
-        
-        # update conversation summary
-        summary = generate_conversation_summary(state, model_name="gpt-3.5-turbo")
-        state["conversation_summary"] = summary
-        
-        # update user preferences
-        state = update_user_prference(state, model_name="gpt-3.5-turbo")
-        
-        return state
-    except Exception as e:
-        print(f"Error calling LLM model: {e}")
-        state["error_message"] = "抱歉，處理您的請求時發生錯誤。"
-        return state
-
-            
+def dynamic_k_by_query(query: str, base_k: int = RETRIEVAL_K, max_k: int = 10) -> int:
+    """
+    according to the query length to adjust k value
+    """
+    length = len(query)
+    if length < 50:
+        retrun base_k
+    elif length < 200:
+        return min(base_k+2, max_k)
+    else:
+        return max_k
+    
+    
+    
