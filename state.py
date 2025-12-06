@@ -1,75 +1,50 @@
 from typing import List, Dict, Optional, Any
-from typing_extensions import TypedDict, Annotated
+from typing_extensions import TypedDict
 
 class AnyMessage(TypedDict):
-    """Single message of any role"""
     role: str
     content: str
     
-def add_message(messages: List[AnyMessage], new_message: AnyMessage) -> List[AnyMessage]:
-    """Reducer to add a message to the conversation history"""
-    return messages + [new_message]
-
 class Document(TypedDict):
-    """RAG retrieved document"""
     title: str
     content: str
     source: Optional[str]
     
 class ToolResult(TypedDict):
-    """Tools result structure"""
     tool_name: str
-    result: str
+    result: Any
+    
+class AgentState(TypedDict, total=False):
+    """
+    統一狀態結構，支援所有 agent node、工具、函數的輸入與輸出
+    """
+    # 對話與查詢
+    user_input: str  # 使用者最新輸入
+    messages: List[AnyMessage]  # 多輪對話訊息
+    query: Optional[str]  # 查詢字串（可累積所有 user query）
+    recent_queries: List[str]  # 近期查詢
+    conversation_summary: Optional[str]  # 對話摘要
 
-class AgentState(TypedDict):
-    """
-    State structure for the travel agent
-    args:
-    messages: List of messages in the conversation
-    example: [{"role": "user", "content": "我是一個滑雪新手，我想明年初排去滑雪，有推薦日本的雪場嗎？"},
-              {"role": "assistant", "content": "請問您要玩幾天"}]
-    user_preferences: User's travel preferences
-    example: {"budget": "中等", "travel_dates": "明年一月", "activity_level": "初學者"}
-    retrieved_docs: Documents retrieved for RAG
-    example: [{"title": "日本滑雪場推薦", "content": "日本有許多優質的滑雪場，如北海道的二世古、長野的白馬等，適合初學者。", "source": "travel_blog_123"},
-              {"title": "滑雪裝備指南", "content": "初學者建議租借滑雪裝備，避免購買過多不必要的用品。", "source": "ski_gear_guide"}]
-    query: Current user query
-    example: "推薦適合初學者的日本滑雪場"
-    conversation_summary: Summary of the conversation so far
-    example: "用戶是一個滑雪新手，尋找適合初學者的日本滑雪場推薦。"
-    """
-    messages: List[AnyMessage]
-    user_preferences: Dict[str, Any]
-    retrieved_docs: List[Document]
-    query: Optional[str]
-    recent_queries: list[str]  # 新增：最近 N 輪 user query
-    conversation_summary: Optional[str]  # 新增欄位
-    tool_results: Optional[List[ToolResult]]
-    
-if __name__ == "__main__":
-    state: AgentState = {
-        "messages": [
-            {"role": "user", "content": "我是一個滑雪新手，我想明年初排去滑雪，有推薦日本的雪場嗎？"},
-            {"role": "assistant", "content": "請問您要玩幾天"}
-            ],
-        "user_preferences": {"budget": "中等", "travel_dates": "明年一月", "activity_level": "初學者"},
-        "retrieved_docs": [
-            {"title": "日本滑雪場推薦", "content": "日本有許多優質的滑雪場，如北海道的二世古、長野的白馬等，適合初學者。", "source": "travel_blog_123"},
-            {"title": "滑雪裝備指南", "content": "初學者建議租借滑雪裝備，避免購買過多不必要的用品。", "source": "ski_gear_guide"}
-        ],
-        "query": "推薦適合初學者的日本滑雪場",
-        "conversation_summary": "用戶是一個滑雪新手，尋找適合初學者的日本滑雪場推薦。",
-        "tool_results": {
-            "search_results": {
-                "tool_name": "tavily_search",
-                "result": [
-                    {"title": "上野公園", "description": "東京最著名的賞櫻地點之一。", "url": "https://example.com/ueno", "rating": 4.8},
-                    {"title": "目黑川", "description": "沿岸櫻花盛開，適合散步。", "url": "https://example.com/meguro", "rating": 4.7}
-                ]
-            }
-        }
-    }
-    print("AgentState example:")
-    for key, value in state.items():
-        print(f"{key}: {value}")
-    
+    # 偏好與檢索
+    user_preferences: Dict[str, Any]  # 解析後的偏好
+    retrieved_docs: List[Document]  # RAG 檢索結果
+    retriever_data: Optional[Any]  # 檢索資料（結構化結果）
+
+    # 工具/agent結果
+    tool_results: Optional[List[ToolResult]]  # 工具回傳結果（如 search, weather, etc）
+    attraction_data: Optional[Any]  # 景點資料
+    weather_data: Optional[Any]  # 天氣資料
+    accommodation_data: Optional[Any]  # 住宿資料
+    planner_result: Optional[Any]  # 行程規劃結果
+    evaluation_result: Optional[Any]  # 行程評估結果
+    final_itinerary: Optional[Any]  # 最終行程（可用於 output/存檔）
+
+    # 流程控制
+    need_planning: Optional[bool]  # 是否進入規劃階段
+    need_evaluation: Optional[bool]  # 是否進入評估階段
+    current_agent: Optional[str]  # 目前執行 agent
+    top_k: Optional[int]  # 檢索/推薦數量（如有需要可用）
+
+    # 其他可擴充欄位
+    error: Optional[str]  # 錯誤訊息（如有）
+    status: Optional[str]  # 狀態標記（如有）
