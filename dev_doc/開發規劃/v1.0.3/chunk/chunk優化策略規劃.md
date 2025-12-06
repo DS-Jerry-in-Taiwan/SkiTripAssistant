@@ -34,6 +34,27 @@
 6. 測試檢索效果，根據查詢回應品質微調分割規則與參數。
 7. 收集用戶回饋，持續優化語義分割策略。
 
+### 主流語意切分方法
+    ** Markdown 標題分割 **
+
+    依據 Markdown 標題（如 #, ##, ###）分割文本，常用於結構化文件。
+    工具：MarkdownHeaderTextSplitter（LangChain）
+    
+    ** 固定長度 + Overlap 分割 **
+
+    依字數或 token 數分割，並設定重疊區，確保語意連貫。
+    工具：RecursiveCharacterTextSplitter（LangChain）
+    
+    ** 正則表達式分割 **
+
+    針對特殊符號（如「【主題】」）自訂分割規則，保留主題語意。
+    適用於非標準格式文本。
+    
+    ** 語義分割（Semantic Splitter） **
+
+    利用 NLP 工具（如 spaCy、NLTK）根據語句、段落、主題自動分割。
+    適合自然語言長文本。
+
 #### 3. 滑動窗口分割
 - 使用 RecursiveCharacterTextSplitter，支援 chunk_overlap
 - 適合長文本或資訊密集型內容

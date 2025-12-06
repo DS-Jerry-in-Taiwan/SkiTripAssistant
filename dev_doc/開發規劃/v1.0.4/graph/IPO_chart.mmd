@@ -1,0 +1,13 @@
+flowchart TD
+    Input[Input<br>使用者查詢]
+    Process1[main.py<br>組裝 AgentState]
+    Process2[graph.py<br>agent orchestration]
+    Process3[nodes.py<br>RAG/LLM/工具]
+    Process4[state.py<br>資料流管理]
+    Output[Output<br>CLI 回傳結果]
+
+    Input --> Process1
+    Process1 --> Process2
+    Process2 --> Process3
+    Process3 --> Process4
+    Process4 --> Output

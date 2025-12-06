@@ -1,0 +1,7 @@
+flowchart TD
+    A[使用者輸入查詢] --> B[main.py<br>組裝/更新 AgentState]
+    B --> C[graph.py<br>Agent node orchestration]
+    C --> D[nodes.py<br>RAG/LLM/工具 function]
+    D --> E[state.py<br>統一資料流管理]
+    E --> F[main.py<br>CLI 輸出]
+    F --> G[回傳結果給使用者]
