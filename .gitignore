@@ -3,3 +3,4 @@ travel_agent_mvp/
 __pycache__/
 hist/
 *.sh
+chroma_db/*
