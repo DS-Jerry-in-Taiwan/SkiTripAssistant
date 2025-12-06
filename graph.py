@@ -1,5 +1,6 @@
 import os
 import json
+from nodes import update_recent_queries, get_merged_query, dynamic_k_by_query
 from pydantic import BaseModel, Field
 from langchain_core.tools import StructuredTool
 from typing import List, Optional, Dict, Any
@@ -696,6 +697,7 @@ evaluator_agent = create_agent(
 
 def call_retriever_agent(query: str) -> str:
     """呼叫完整的 Retriever Agent（包含推理循環）"""
+    query = get_merged_query(state)
     result = retriever_agent.invoke({"messages": [{"role": "user", "content": query}]})
     return result["messages"][-1].content
 
@@ -1241,6 +1243,9 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     3. 呼叫 Itinerary Agent 生成行程
     4. 回傳最終行程
     """
+    # update state with user input
+    update_recent_queries(state, user_input, max_n=3)
+    
     user_input = state.get("user_input", "")
     
     # Planner Agent 會透過 tool calling 自主呼叫其他 Agent
@@ -1296,6 +1301,8 @@ def evaluator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     return state
 
 def recommendation_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    update_recent_queries(state, user_input, max_n=3)
+    
     user_input = state.get("user_input", "")
     all_messages = state.get("messages", [])
     context_str = " ".join([msg["content"] for msg in all_messages if msg.get("role") == "user"])
