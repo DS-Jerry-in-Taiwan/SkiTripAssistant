@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'travel_agent_mvp'
+    static_configs:
+      - targets: ['10.223.81.129:8000']

@@ -38,6 +38,11 @@ class AgentState(TypedDict, total=False):
     planner_result: Optional[Any]  # 行程規劃結果
     evaluation_result: Optional[Any]  # 行程評估結果
     final_itinerary: Optional[Any]  # 最終行程（可用於 output/存檔）
+    
+    # 延遲時間紀錄（秒）
+    planner_node_latency: Optional[float]  # 規劃 agent latency
+    evaluator_node_latency: Optional[float]  # 評估 agent latency
+    recommendation_node_latency: Optional[float]  # 推薦 agent latency
 
     # 流程控制
     need_planning: Optional[bool]  # 是否進入規劃階段

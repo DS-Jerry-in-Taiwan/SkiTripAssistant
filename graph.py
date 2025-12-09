@@ -1,8 +1,11 @@
 import os
 import json
-from nodes import update_recent_queries, get_merged_query, dynamic_k_by_query
+import time
+import logging
+from pathlib import Path
 from pydantic import BaseModel, Field
 from langchain_core.tools import StructuredTool
+from nodes import update_recent_queries, get_merged_query, dynamic_k_by_query
 from typing import List, Optional, Dict, Any
 from nodes import (
     search_attractions_tool_wrapper,
@@ -21,7 +24,6 @@ from travel_agent_mvp.tools import (
     weather_base_tools,
     accommodation_base_tools
 )
-from pathlib import Path
 from langchain.agents import create_agent
 from langchain_core.tools import Tool
 from langchain_openai import ChatOpenAI
@@ -101,23 +103,37 @@ evaluator_agent = create_agent(
 
 # ========== Agent Communication Tools (A2A) ==========
 
+def measure_latency(agent, message, agent_name):
+    start_time = time.time()
+    result = agent.invoke({"message": messages})
+    latency = time.time() - start_time
+    logging.info(f"[latency] {agent_name} took {latency: .3f} seconds")
+    return result, latency
+
+def measure_latency(agent, messages, agent_name="agent"):
+    start_time = time.perf_counter()
+    result = agent.invoke({"messages": messages})
+    latency = time.perf_counter() - start_time
+    logging.info(f"[latency] {agent_name}: {latency:.3f}s")
+    return result, latency
+
 def call_retriever_agent(query: str) -> str:
-    """呼叫完整的 Retriever Agent（包含推理循環）"""
     query = get_merged_query(state)
-    result = retriever_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    result, latency = measure_latency(retriever_agent, [{"role": "user", "content": query}], "retriever_agent")
+    # 可選：將 latency 存到 state
+    # state["retriever_latency"] = latency
     return result["messages"][-1].content
 
 def call_attraction_agent(query: str) -> str:
-    """呼叫完整的 Attraction Agent（包含推理循環）"""
-    result = attraction_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    result, latency = measure_latency(attraction_agent, [{"role": "user", "content": query}], "attraction_agent")
+    # state["attraction_latency"] = latency
     return result["messages"][-1].content
 
 def call_itinerary_agent(user_request: str, retriever_data: str = "", attraction_data: str = "") -> str:
-    f"""
+    prompt = f"""
     使用者需求：{user_request}
     檢索資訊（JSON）：{retriever_data}
     景點資訊（JSON）：{attraction_data}
-
     請依照以下格式回覆，所有欄位都需填寫：
     {{
       "summary": "...",
@@ -148,58 +164,33 @@ def call_itinerary_agent(user_request: str, retriever_data: str = "", attraction
     }}
     請直接回覆符合格式的 JSON，不要加自然語言說明。
     """
-    result = itinerary_agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    result, latency = measure_latency(itinerary_agent, [{"role": "user", "content": prompt}], "itinerary_agent")
+    # state["itinerary_latency"] = latency
     return result["messages"][-1].content
 
 def call_weather_agent(location: str, start_date: str, end_date: str = None) -> str:
-    """
-    呼叫 Weather Agent 查詢天氣資訊
-    
-    Args:
-        location: 地點（如「台中」、「台北」）
-        start_date: 開始日期（格式 YYYY-MM-DD）
-        end_date: 結束日期（可選，格式 YYYY-MM-DD）
-    
-    Returns:
-        JSON 格式的天氣預報資訊
-    """
     if end_date:
         query = f"請查詢 {location} 從 {start_date} 到 {end_date} 的天氣預報"
     else:
         query = f"請查詢 {location} 在 {start_date} 的天氣預報"
-    
-    result = weather_agent.invoke({"messages": [{"role": "user", "content": query}]})
-    # 找到最後一個 AIMessage
+    result, latency = measure_latency(weather_agent, [{"role": "user", "content": query}], "weather_agent")
+    # state["weather_latency"] = latency
+    # ...後續解析 result["messages"] ...
     for msg in reversed(result["messages"]):
         if hasattr(msg, 'content'):
             content = msg.content
-            
-            # 如果是 Pydantic 物件，直接轉 JSON
             if hasattr(content, 'model_dump'):
                 weather_data = content.model_dump()
                 return json.dumps(weather_data, ensure_ascii=False, indent=2)
-            
-            # 如果是字串，嘗試解析
-            # 處理字串格式
             if isinstance(content, str):
-                # 移除 debug 輸出前綴
                 if "Returning structured response:" in content:
-                    # 嘗試從字串中提取結構化資料
-                    # 格式: "Returning structured response: 查詢地點='台中' 天氣預報=[...] 整體分析='...'"
                     try:
-                        # 使用 eval 解析 (僅用於已知格式)
                         import re
-                        # 提取查詢地點
                         location_match = re.search(r"查詢地點='([^']+)'", content)
-                        # 提取整體分析
                         analysis_match = re.search(r"整體分析='([^']+)'", content)
-                        
-                        # 提取天氣預報列表
                         forecast_match = re.search(r"天氣預報=\[(.*?)\] 整體分析", content, re.DOTALL)
-                        
                         if location_match and analysis_match and forecast_match:
                             forecast_str = forecast_match.group(1)
-                            # 解析每個 WeatherForecast 物件
                             forecasts = []
                             for item in re.finditer(r"WeatherForecast\(日期='([^']+)', 天氣='([^']+)', 氣溫='([^']+)'\)", forecast_str):
                                 forecasts.append({
@@ -207,7 +198,6 @@ def call_weather_agent(location: str, start_date: str, end_date: str = None) -> 
                                     "天氣": item.group(2),
                                     "氣溫": item.group(3)
                                 })
-                            
                             weather_data = {
                                 "查詢地點": location_match.group(1),
                                 "天氣預報": forecasts,
@@ -216,83 +206,47 @@ def call_weather_agent(location: str, start_date: str, end_date: str = None) -> 
                             return json.dumps(weather_data, ensure_ascii=False, indent=2)
                     except Exception as e:
                         print(f"警告：無法解析 structured response: {e}")
-                
-                # 嘗試直接解析為 JSON
                 try:
-                    # 如果已經是 JSON 格式
                     data = json.loads(content)
                     return json.dumps(data, ensure_ascii=False, indent=2)
                 except:
                     pass
-                
-                # 清理 markdown
                 if "```json" in content:
                     content = content.split("```json")[-1]
                 if "```" in content:
                     content = content.split("```")[0]
                 content = content.strip()
-                
-                # 只取 JSON 部分
                 if "{" in content and "}" in content:
                     content = content[content.find("{"):content.rfind("}")+1]
-                
                 return content
-    
     return json.dumps({"error": "無法解析天氣資料"}, ensure_ascii=False, indent=2)
 
 def call_accommodation_agent(location: str, checkin: str, checkout: str) -> str:
-    """
-    呼叫 Accommodation Agent 查詢住宿資訊
-    
-    Args:
-        location: 地點（如「台中」、「台北」）
-        checkin: 入住日期（格式 YYYY-MM-DD）
-        checkout: 退房日期（格式 YYYY-MM-DD）
-    
-    Returns:
-        JSON 格式的住宿推薦資訊
-    """
     if not checkin or not checkout:
         raise ValueError("請提供入住與退房日期")
         return "請提供入住與退房日期（checkin/checkout）"
     query = f"請查詢 {location} 的住宿,入住日期 {checkin}，退房日期 {checkout}"
-    
-    result = accommodation_agent.invoke({"messages": [{"role": "user", "content": query}]})
-    
-    # 找到最後一個 AIMessage
+    result, latency = measure_latency(accommodation_agent, [{"role": "user", "content": query}], "accommodation_agent")
+    # state["accommodation_latency"] = latency
     for msg in reversed(result["messages"]):
         if hasattr(msg, 'content'):
             content = msg.content
-            
-            # 處理 Pydantic 物件 (AccommodationOutput)
             if hasattr(content, 'model_dump'):
                 accommodation_data = content.model_dump()
                 return json.dumps(accommodation_data, ensure_ascii=False, indent=2)
-            
-            # 處理字串格式
             if isinstance(content, str):
-                # 移除 debug 輸出前綴並解析結構化資料
                 if "Returning structured response:" in content:
                     try:
                         import re
-                        
-                        # 提取查詢地點
                         location_match = re.search(r"查詢地點='([^']+)'", content)
-                        # 提取入住日期
                         checkin_match = re.search(r"入住日期='([^']+)'", content)
-                        # 提取退房日期
                         checkout_match = re.search(r"退房日期='([^']+)'", content)
-                        # 提取整體分析
                         analysis_match = re.search(r"整體分析='([^']+)'", content)
-                        
-                        # 提取推薦住宿列表
                         hotels = []
                         hotel_pattern = r"HotelRecommendation\(名稱='([^']+)', 類型='([^']+)', 評分=([\d.]+), 價格='([^']+)', 總價='([^']+)', 特色=\[([^\]]+)\], 交通='([^']+)', 推薦理由='([^']+)'\)"
                         for hotel_match in re.finditer(hotel_pattern, content):
-                            # 解析特色列表
                             features_str = hotel_match.group(6)
                             features = [f.strip().strip("'\"") for f in features_str.split(',')]
-                            
                             hotels.append({
                                 "名稱": hotel_match.group(1),
                                 "類型": hotel_match.group(2),
@@ -303,13 +257,10 @@ def call_accommodation_agent(location: str, checkin: str, checkout: str) -> str:
                                 "交通": hotel_match.group(7),
                                 "推薦理由": hotel_match.group(8)
                             })
-                        
-                        # 提取選擇建議
                         suggestion_match = re.search(
                             r"選擇建議=ChoiceSuggestion\(預算型='([^']+)', 體驗型='([^']+)', 家庭型='([^']+)'\)",
                             content
                         )
-                        
                         if location_match and checkin_match and checkout_match and analysis_match:
                             accommodation_data = {
                                 "查詢地點": location_match.group(1),
@@ -326,22 +277,16 @@ def call_accommodation_agent(location: str, checkin: str, checkout: str) -> str:
                             return json.dumps(accommodation_data, ensure_ascii=False, indent=2)
                     except Exception as e:
                         print(f"警告：無法解析 structured response: {e}")
-                
-                # 嘗試直接解析為 JSON
                 try:
                     data = json.loads(content)
                     return json.dumps(data, ensure_ascii=False, indent=2)
                 except:
                     pass
-                
-                # 清理 markdown
                 if "```json" in content:
                     content = content.split("```json")[-1]
                 if "```" in content:
                     content = content.split("```")[0]
                 content = content.strip()
-                
-                # 只取 JSON 部分
                 if "{" in content and "}" in content:
                     content = content[content.find("{"):content.rfind("}")+1]
                     try:
@@ -349,9 +294,7 @@ def call_accommodation_agent(location: str, checkin: str, checkout: str) -> str:
                         return json.dumps(data, ensure_ascii=False, indent=2)
                     except:
                         pass
-                
                 return content
-    
     return json.dumps({
         "error": "無法解析住宿資料",
         "查詢地點": location,
@@ -365,12 +308,8 @@ def call_accommodation_agent(location: str, checkin: str, checkout: str) -> str:
         },
         "整體分析": "查詢失敗"
     }, ensure_ascii=False, indent=2)
-    
+
 def call_evaluator_agent(itinerary_data: dict, user_preferences: dict) -> str:
-    """
-    呼叫 Evaluator Agent 評估行程
-    Returns: JSON 格式的評估結果
-    """
     query = f"""
     請評估以下行程：
     ## 行程資料
@@ -379,44 +318,31 @@ def call_evaluator_agent(itinerary_data: dict, user_preferences: dict) -> str:
     {json.dumps(user_preferences, ensure_ascii=False, indent=2)}
     請根據上述資料，評估行程品質並提供優化建議。
     """
-    result = evaluator_agent.invoke({"messages": [{"role": "user", "content": query}]})
-
-    # 找到最後一個 AIMessage
+    result, latency = measure_latency(evaluator_agent, [{"role": "user", "content": query}], "evaluator_agent")
     for msg in reversed(result["messages"]):
         if hasattr(msg, 'content'):
             content = msg.content
-
-            # 如果是 Pydantic 物件，直接轉 JSON
             if hasattr(content, 'model_dump_json'):
                 return content.model_dump_json(indent=2, ensure_ascii=False)
             if hasattr(content, 'model_dump'):
                 return json.dumps(content.model_dump(), ensure_ascii=False, indent=2)
-
-            # 如果是字串，嘗試解析
             if isinstance(content, str):
-                # 處理 "Returning structured response:" 格式
                 if "Returning structured response:" in content:
                     import re
-                    # 提取各欄位
                     summary = re.search(r"行程摘要='([^']+)'", content)
                     score = re.search(r"評分=ItineraryScore\((.*?)\)", content)
                     suggestions = re.findall(r"OptimizationSuggestion\((.*?)\)", content)
                     evaluation = re.search(r"整體評價='([^']+)'", content)
                     need_adjust = re.search(r"是否需要調整=(True|False)", content)
-
-                    # 解析評分
                     score_dict = {}
                     if score:
                         for item in score.group(1).split(','):
                             k, v = item.split('=')
                             score_dict[k.strip()] = float(v.strip())
-                    # 解析優化建議
                     suggestion_list = []
                     for s in suggestions:
                         fields = re.findall(r"(\w+)='([^']+)'", s)
                         suggestion_list.append({k: v for k, v in fields})
-
-                    # 組合 JSON
                     result_json = {
                         "行程摘要": summary.group(1) if summary else "",
                         "評分": score_dict,
@@ -425,22 +351,16 @@ def call_evaluator_agent(itinerary_data: dict, user_preferences: dict) -> str:
                         "是否需要調整": True if need_adjust and need_adjust.group(1) == "True" else False
                     }
                     return json.dumps(result_json, ensure_ascii=False, indent=2)
-
-                # 嘗試直接解析為 JSON
                 try:
                     data = json.loads(content)
                     return json.dumps(data, ensure_ascii=False, indent=2)
                 except:
                     pass
-
-                # 清理 markdown
                 if "```json" in content:
                     content = content.split("```json")[-1]
                 if "```" in content:
                     content = content.split("```")[0]
                 content = content.strip()
-
-                # 只取 JSON 部分
                 if "{" in content and "}" in content:
                     content = content[content.find("{"):content.rfind("}")+1]
                     try:
@@ -448,9 +368,7 @@ def call_evaluator_agent(itinerary_data: dict, user_preferences: dict) -> str:
                         return json.dumps(data, ensure_ascii=False, indent=2)
                     except:
                         pass
-
                 return content
-
     return json.dumps({
         "error": "無法解析評估結果",
         "行程摘要": "評估失敗",
@@ -465,6 +383,7 @@ def call_evaluator_agent(itinerary_data: dict, user_preferences: dict) -> str:
         "整體評價": "評估失敗",
         "是否需要調整": False
     }, ensure_ascii=False, indent=2)
+
 
 # ========== Define A2A Tools ==========
 
@@ -562,7 +481,7 @@ recommendation_agent = create_agent(
 
 # ========== Agent Wrapper Nodes ==========
 
-def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def planner_node(state: AgentState) -> AgentState:
     """
     Planner Agent Node - 協調所有 Agent 並生成行程
     
@@ -578,8 +497,8 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     user_input = state.get("user_input", "")
     
     # Planner Agent 會透過 tool calling 自主呼叫其他 Agent
-    result = planner_agent.invoke({"messages": [{"role": "user", "content": user_input}]})
-    
+    result, latency = measure_latency(planner_agent, [{"role": "user", "content": user_input}], "planner_node")
+    state["planner_node_latency"] = latency
     # 取得最終回應（可能經過多輪 tool calling）
     final_message = result["messages"][-1]
     
@@ -589,7 +508,7 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     return state
 
-def evaluator_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def evaluator_node(state: AgentState) -> AgentState:
     """
     Evaluator Agent Node - 評估行程品質（只評估一次，不觸發重新規劃）
     
@@ -613,7 +532,8 @@ def evaluator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     注意：本次只評估，不觸發重新規劃。
     """
     
-    result = evaluator_agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    result, latency = measure_latency(evaluator_agent, [{"role": "user", "content": prompt}], "evaluator_node")
+    state["evaluator_node_latency"] = latency
     
     # 取得評估結果
     last_message = result["messages"][-1]
@@ -629,7 +549,7 @@ def evaluator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     return state
 
-def recommendation_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def recommendation_node(state: AgentState) -> AgentState:
     update_recent_queries(state, user_input, max_n=3)
     
     user_input = state.get("user_input", "")
@@ -638,7 +558,8 @@ def recommendation_node(state: Dict[str, Any]) -> Dict[str, Any]:
     state["need_planning"] = False
 
     # 1. 呼叫 recommendation_agent，傳入完整 messages（多輪上下文）
-    result = recommendation_agent.invoke({"messages": all_messages})
+    result, latency = measure_latency(recommendation_agent, all_messages, "recommendation_node")
+    state["recommendation_node_latency"] = latency
 
     final_message = result["messages"][-1]
     rec_reply = final_message.content if hasattr(final_message, 'content') else str(final_message)
@@ -673,7 +594,7 @@ def recommendation_node(state: Dict[str, Any]) -> Dict[str, Any]:
         return state
 
 # ========== Simplified Router（移除優化循環）==========
-def route(state: Dict[str, Any]) -> str:
+def route(state: AgentState) -> str:
     """
     多 agent 互動分流 router
     - recommendation: 推薦/引導階段
